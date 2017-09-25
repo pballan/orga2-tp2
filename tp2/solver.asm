@@ -2,6 +2,8 @@ extern free
 extern malloc
 
 
+%define OFFSET_SOLVER_N 0
+
 solver_set_bnd:
     xor r12, r12
     mov r13, 
@@ -11,7 +13,7 @@ solver_set_bnd:
         add rbx, 4
         
         mov r12, rbx
-        add r12, N + 4 ; el 4 funca aca?, de donde saco N? 
+        add r12, OFFSET_SOLVER_N + 4 ; el 4 funca aca?, de donde saco N? 
         add r12, 8
     .loop:
         movdqu xmm1, [r12]
@@ -34,7 +36,7 @@ solver_set_bnd:
         addss xmm1, xmm2
         mulss xmm1, 0.5f
         movss [rbx], xmm1
-        add rdx, 4*(N+1) ; que onda las operaciones acá? y el N?
+        add rdx, 4 * (OFFSET_SOLVER_N + 1) ; que onda las operaciones acá? y el N?
 
         ;[0, N+1]
         mov rbx, rdx
@@ -48,26 +50,26 @@ solver_set_bnd:
 
         ;[N+1, 0]
         mov rdx, rcx
-        add rdx, (N+2)*(N+1)*4
+        add rdx, (OFFSET_SOLVER_N + 2)*(OFFSET_SOLVER_N + 1) * 4
         mov rbx, rdx
         add rbx, 4
         movss xmm1, [rbx]
-        sub rbx, (4*(N+3))
+        sub rbx, (4 * (OFFSET_SOLVER_N + 3))
         movss xmm2, [rbx]
         addss xmm1, xmm2
         mulss xmm1, 0.5f
 
         ; [N+1, N+1]
         movss [rdx], xmm1
-        add rdx, 4*(N+1)
+        add rdx, 4 * (OFFSET_SOLVER_N + 1)
         mov rbx, rdx
         sub rbx, 4
         movss xmm1, [rbx]
-        sub rbx, 4*(N+1)
+        sub rbx, 4 * (OFFSET_SOLVER_N + 1)
         movss xmm2, [rbx]
         addss xmm1, xmm2
         mulss xmm1, 0.5f
         movss [rbx], xmm1 
 
-        
-          
+
+
