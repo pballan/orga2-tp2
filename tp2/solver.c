@@ -130,10 +130,11 @@ void solver_set_bnd ( fluid_solver* solver, uint32_t b, float * x ){
 
 void solver_project ( fluid_solver* solver, float * p, float * div ){
 	uint32_t i, j;
-	FOR_EACH_CELL
+	/*FOR_EACH_CELL
 		div[IX(i,j)] = -0.5f*(solver->u[IX(i+1,j)]-solver->u[IX(i-1,j)]+solver->v[IX(i,j+1)]-solver->v[IX(i,j-1)])/solver->N;
 		p[IX(i,j)] = 0;
-	END_FOR	
+	END_FOR*/
+	solver_project_first ( solver, p, div  );
 	solver_set_bnd ( solver, 0, div ); 
 	solver_set_bnd ( solver, 0, p );
 	solver_lin_solve ( solver, 0, p, div, 1, 4 );
