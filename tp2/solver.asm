@@ -4,14 +4,15 @@ extern malloc
 section .rodata
 divMask: dd -0.5, -0.5, -0.5, -0.5
 selectMask: dd 0x0000, 0x11111111, 0x11111111, 0x0000   
-
+ceroComaCinco: dd 0.5, 0.5, 0.5, 0.5
+negativeMask: dd -1, -1, -1, -1
 
 section .text
 
 ;typedef struct fluid_solver_t {
 ;    uint32_t N;       0          
 ;    float dt,          4   
-;    float difff,       8  
+;    float diff,       8  
 ;    float visc;        12       
 ;    float * u,         16 
      ;float* v,         24
@@ -24,24 +25,126 @@ section .text
 %define offset_solver_u 16
 %define offset_solver_v 24
 
+
+; void solver_set_bnd ( fluid_solver* solver, uint32_t b, float * x ){
+; 	uint32_t i;
+; 	uint32_t N = solver->N;
+; 	for ( i=1 ; i<=N ; i++ ) {
+; 		x[IX(0  ,i)] = b==1 ? -x[IX(1,i)] : x[IX(1,i)];
+; 		x[IX(N+1,i)] = b==1 ? -x[IX(N,i)] : x[IX(N,i)];
+; 		x[IX(i,0  )] = b==2 ? -x[IX(i,1)] : x[IX(i,1)];
+; 		x[IX(i,N+1)] = b==2 ? -x[IX(i,N)] : x[IX(i,N)];
+; 	}
+; 	x[IX(0  ,0  )] = 0.5f*(x[IX(1,0  )]+x[IX(0  ,1)]);
+; 	x[IX(0  ,N+1)] = 0.5f*(x[IX(1,N+1)]+x[IX(0  ,N)]);
+; 	x[IX(N+1,0  )] = 0.5f*(x[IX(N,0  )]+x[IX(N+1,1)]);
+; 	x[IX(N+1,N+1)] = 0.5f*(x[IX(N,N+1)]+x[IX(N+1,N)]);
+; }
+
+
+
 global solver_set_bnd2
-solver_set_bnd2:
-    ;xor r12, r12
-    ;mov r13, 
+solver_set_bnd:
+    ;rdi = solver
+    ;rsi = b 
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+
 
     .code:
-        ;mov rbx, rdx
-        add rbx, 4
+        mov rbx, rdx ; rbx == *x
+        add rbx, 4 ; rbx += 4
         
-        mov r12, rbx
-        add r12, offset_solver_n + 4 ; el 4 funca aca?, de donde saco N? 
-        add r12, 8
+        mov r12, [rdi] ; r12 = N
+        mov r10, [rdi] ; r10 = N
+        
+        add r10, 8; r10 = N + 2
+
+        add r12, [rdi] ; r12 = 2N
+        add r12, 4 ; r12 = 2N + 1
+        add r12, 8 ; r12 = 2N + 1 + 2
+
+
     .loop:
-        movdqu xmm1, [r12]
+
+
+        mov r8, rsi ; r8 = b
+        sub r8, 1 ; r8 = b - 1
+        je .bEsUno ; r8 == 0
+        
+        
+        .bNoEsUno:
+            ; x[IX(0,i)] = x[IX(1,i)];
+            movdqu xmm1, [r12] ; tengo mi xmm1 = [x[1,i] | x[1,i+1] | x[1,i+2] | x[1,i+3]]
+            movdqu [rbx], xmm1 ; pongo en x[0,i]
+            
+            ; x[IX(N+1,i)] = x[IX(N,i)];
+            movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
+            movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
+
+            jmp .secondPart
+
+        .bEsUno:
+            ; x[IX(0  ,i)] = -x[IX(1,i)];
+            movdqu xmm1, [r12] ; tengo mi xmm1 = [x[1,i] | x[1,i+1] | x[1,i+2] | x[1,i+3]]
+            movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
+            mulss xmm1, xmm7 ; xmm7 = [-x[1,i] | -x[1,i+1] | -x[1,i+2] | -x[1,i+3]]
+            movdqu [rbx], xmm1 ; pongo en x[0,i]
+            
+            ; x[IX(N+1,i)] = -x[IX(N,i)];
+            movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
+            movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
+            mulss xmm1, xmm7 ; xmm7 = [-x[N,i] | -x[N,i+1] | -x[N,i+2] | -x[N,i+3]]
+            movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
+
+
+            jmp .secondPart
+        
+        
+        
+        .secondPart: 
+            mov r8, rsi ; r8 = b
+            sub r8, 1 ; r8 = b - 1
+            je .bEsDos ; r8 == 0
+
+            .bNoEsDos:
+                ; x[IX(i,0)] = x[IX(i,1)];
+                movdqu xmm1, [r10 + rbx] ; tengo mi xmm1 = [x[i,1] | x[i+1,1] | x[i+2,1] | x[i+3,1]]
+                mov r14, [rbx] ; r14 = i
+                mov r15, [r10] ; r15 = N + 2
+                mul r14, r15 ; r14 = i*(N + 2)
+                movdqu [r14], xmm1 ; pongo en x[i,0]
+                
+
+                ; x[IX(N+1,i)] = x[IX(N,i)];
+                movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
+                movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
+
+
+
+            .bEsDos:
+
+
+
+
+
+        movdqu xmm1, [r12] 
         movdqu [rbx], xmm1
 
-        sub r13, 4
-        cmp r13, 0
+
+
+
+        sub r12, 4
+        cmp r12, 0
+        
+        
+        
         jle .fillBorders
 
         add rbx, 16
@@ -50,12 +153,13 @@ solver_set_bnd2:
 
     .fillBorders:
         ;[0,0]
-        mov rcx, rdx
+        mov rcx, rdx ;
         mov rbx, rdx
         add rbx, 4
         movss xmm2, [rbx]
         addss xmm1, xmm2
-        ;mulss xmm1, 0.5f
+        movdqu xmm7, [ceroComaCinco]
+        mulss xmm1, xmm7
         movss [rbx], xmm1
         add rdx, 4 * (offset_solver_n + 1) ; que onda las operaciones acá? y el N?
 
@@ -63,10 +167,11 @@ solver_set_bnd2:
         mov rbx, rdx
         sub rbx, 4
         movss xmm1, [rbx]
-        ;add rbx, 4*(N+3)
+        add rbx, 4 * (offset_solver_n + 3)
         movss xmm2, [rbx]
         addss xmm1, xmm2
-        ;mulss xmm1, 0.5f
+        movdqu xmm7, [ceroComaCinco]
+        mulss xmm1, xmm7
         movss [rdx], xmm1
 
         ;[N+1, 0]
@@ -78,7 +183,8 @@ solver_set_bnd2:
         sub rbx, (4 * (offset_solver_n + 3))
         movss xmm2, [rbx]
         addss xmm1, xmm2
-        ;mulss xmm1, 0.5f
+        movdqu xmm7, [ceroComaCinco]        
+        mulss xmm1, xmm7
 
         ; [N+1, N+1]
         movss [rdx], xmm1
@@ -89,8 +195,25 @@ solver_set_bnd2:
         sub rbx, 4 * (offset_solver_n + 1)
         movss xmm2, [rbx]
         addss xmm1, xmm2
-        ;mulss xmm1, 0.5f
+        movdqu xmm7, [ceroComaCinco]        
+        mulss xmm1, xmm7
         movss [rbx], xmm1 
+
+
+
+
+
+    add rsp, 8
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+ret
+
+
+
 
 global solver_project_first
 solver_project_first:
