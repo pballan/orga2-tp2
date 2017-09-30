@@ -102,7 +102,7 @@ void solver_advect ( fluid_solver* solver, uint32_t b, float * d, float * d0, fl
 
 /* SIMD IMPLEMENTATION */
 // #define FOR_EACH_CELL for ( i=1 ; i<=solver->N ; i++ ) { for ( j=1 ; j<=solver->N ; j++ ) {
-
+/*
 void solver_lin_solve ( fluid_solver* solver, uint32_t b, float * x, float * x0, float a, float c ){
 	uint32_t i, j, k;
 	for ( k=0 ; k<20 ; k++ ) {
@@ -112,7 +112,7 @@ void solver_lin_solve ( fluid_solver* solver, uint32_t b, float * x, float * x0,
 		solver_set_bnd ( solver, b, x );
 	}
 }
-
+*/
 void solver_set_bnd ( fluid_solver* solver, uint32_t b, float * x ){
 	uint32_t i;
 	uint32_t N = solver->N;
