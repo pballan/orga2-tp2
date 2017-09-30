@@ -71,89 +71,152 @@ solver_set_bnd:
         add r12, 8 ; r12 = 2N + 1 + 2
 
 
-    .loop:
-
+    .loop_up_down:    
 
         mov r8, rsi ; r8 = b
         sub r8, 1 ; r8 = b - 1
-        je .bEsUno ; r8 == 0
-        
-        
-        .bNoEsUno:
-            ; x[IX(0,i)] = x[IX(1,i)];
-            movdqu xmm1, [r12] ; tengo mi xmm1 = [x[1,i] | x[1,i+1] | x[1,i+2] | x[1,i+3]]
-            movdqu [rbx], xmm1 ; pongo en x[0,i]
+        je .bEsDos ; r8 == 0
+
+        .bNoEsDos:
+
+            xor r15, r15 ; r15 = 0
+            add r15, rbx ; r15 = i
+            add r15, r10 ; r15 = N + 2 + i
+            movdqu xmm1, [r15] ; xmm1 = [x[i,1] | x[i+1,1] | x[i+2,1] | x[i+3,1]]
+            movdqu [rbx], xmm1 ; pongo en x[i,0]
             
+            xor r15, r15 
+            mov r14, r10 ; r14 = N + 2
+            sub r14, 8 ; r14 = N
+            mov r15, r10 ; r15 = N
+            mul r15, r14 ; r15 = (N + 2) * N
+            add r15, rbx ; r15 = (N + 2) * N + i
             ; x[IX(N+1,i)] = x[IX(N,i)];
-            movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
-            movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
+            movdqu xmm1, [r15] ; xmm1 = [x[i, N] | x[i+1, N] | x[i+2, N] | x[i+3, N]]
+            
+            add r14, 8 ; r14 = N + 1
+            add r15, r14 ; r15 = (N + 2) * (N + 1) + i
 
-            jmp .secondPart
+            movdqu [r15], xmm1 ; pongo en x[i, N+1]
 
-        .bEsUno:
-            ; x[IX(0  ,i)] = -x[IX(1,i)];
-            movdqu xmm1, [r12] ; tengo mi xmm1 = [x[1,i] | x[1,i+1] | x[1,i+2] | x[1,i+3]]
+            jmp .counters
+
+
+
+        .bEsDos:
+            ; x[IX(i,0)] = x[IX(i,1)];
+            ; r10 = N+2
+            ; rbx = i
+            
+            xor r15, r15 ; r15 = 0
+            add r15, rbx ; r15 = i
+            add r15, r10 ; r15 = N + 2 + i
+            movdqu xmm1, [r15] ; xmm1 = [x[i,1] | x[i+1,1] | x[i+2,1] | x[i+3,1]]
+            movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
+            mulss xmm1, xmm7 ; xmm7 = [-x[i,1] | -x[i+1,1] | -x[i+2,1] | -x[i+3,1]]
+            movdqu [rbx], xmm1 ; pongo en x[i,0]
+
+
+            
+            xor r15, r15 
+            mov r14, r10 ; r14 = N + 2
+            sub r14, 8 ; r14 = N
+            mov r15, r10 ; r15 = N
+            mul r15, r14 ; r15 = (N + 2) * N
+            add r15, rbx ; r15 = (N + 2) * N + i
+
+            ; x[IX(i,N+1)] = x[IX(i,N)];
+            movdqu xmm1, [r15] ; xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
+            
+            add r14, 8 ; r14 = N + 1
+            add r15, r14 ; r15 = (N + 2) * (N + 1) + i
+            
             movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
             mulss xmm1, xmm7 ; xmm7 = [-x[1,i] | -x[1,i+1] | -x[1,i+2] | -x[1,i+3]]
-            movdqu [rbx], xmm1 ; pongo en x[0,i]
-            
-            ; x[IX(N+1,i)] = -x[IX(N,i)];
-            movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
-            movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
-            mulss xmm1, xmm7 ; xmm7 = [-x[N,i] | -x[N,i+1] | -x[N,i+2] | -x[N,i+3]]
-            movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
+
+            movdqu [r15], xmm1 ; pongo en x[N+1,i]
 
 
-            jmp .secondPart
-        
-        
-        
-        .secondPart: 
-            mov r8, rsi ; r8 = b
-            sub r8, 1 ; r8 = b - 1
-            je .bEsDos ; r8 == 0
-
-            .bNoEsDos:
-                ; x[IX(i,0)] = x[IX(i,1)];
-                movdqu xmm1, [r10 + rbx] ; tengo mi xmm1 = [x[i,1] | x[i+1,1] | x[i+2,1] | x[i+3,1]]
-                mov r14, [rbx] ; r14 = i
-                mov r15, [r10] ; r15 = N + 2
-                mul r14, r15 ; r14 = i*(N + 2)
-                movdqu [r14], xmm1 ; pongo en x[i,0]
-                
-
-                ; x[IX(N+1,i)] = x[IX(N,i)];
-                movdqu xmm1, [r12 + r10 - 1] ; tengo mi xmm1 = [x[N,i] | x[N,i+1] | x[N,i+2] | x[N,i+3]]
-                movdqu [rbx + r10], xmm1 ; pongo en x[N+1,i]
-
-
-
-            .bEsDos:
-
-
-
-
-
-        movdqu xmm1, [r12] 
-        movdqu [rbx], xmm1
-
-
-
-
-        sub r12, 4
-        cmp r12, 0
-        
-        
-        
-        jle .fillBorders
 
         add rbx, 16
         add r12, 16
-        jmp .loop
+        jmp .loop_up_down
+
+
+
+
+       ; ---------------------------
+    .loop_der_izq:
+        
+        
+
+
+        mov rbx, [rdi]
+        add rbx, 1
+
+        mov r14, [rdi]
+        add r14, 1 ; r14 = N + 1
+                
+        mov r11, [rdi]
+        mul r11, 4 ; r11 = N * 4
+        
+
+        mov r8, rsi ; r8 = b
+        sub r8, 1 ; r8 = b - 1
+        cmp r8, 0
+
+        je .bEsUno_der_izq ; r8 == 0
+        
+
+        .bNoEsUno_der_izq:
+
+            mov r13, rdx 
+            add r13, r11
+            
+            movdqu xmm1, [r13]
+            movdqu xmm2, xmm1 
+            shufps xmm1, xmm2, 11110000b  
+
+            movdqu xmm7, [negativeMask] ; xmm7 = [-1 | -1 | -1 | -1]
+            mulss xmm1, xmm7 ; xmm7 = [-x[1,i] | -x[1,i+1] | -x[1,i+2] | -x[1,i+3]]
+
+            movdqu [r13], xmm1
+
+            sub rbx, 1
+            cmp rbx, 0
+            je .fillBorders
+
+            jmp .loop_der_izq    
+
+
+        .bEsUno_der_izq:
+
+            mov r13, rdx 
+            add r13, r11
+            
+
+            movdqu xmm1, [r13]
+            movdqu xmm2, xmm1 
+            shufps xmm1, xmm2, 11110000b  
+
+            movdqu [r13], xmm1
+
+            sub rbx, 1
+            cmp rbx, 0
+            je .fillBorders  
+
+            jmp .loop_der_izq    
+            
+
+
 
     .fillBorders:
         ;[0,0]
-        mov rcx, rdx ;
+
+        mov r10, [rdi]
+        mul r10, 4
+
+        mov rcx, rdx 
         mov rbx, rdx
         add rbx, 4
         movss xmm2, [rbx]
@@ -161,13 +224,16 @@ solver_set_bnd:
         movdqu xmm7, [ceroComaCinco]
         mulss xmm1, xmm7
         movss [rbx], xmm1
-        add rdx, 4 * (offset_solver_n + 1) ; que onda las operaciones acá? y el N?
+
+        add rdx, r10 ; rbx += 4*N
+        add rdx, 4 ; rbx += 4
 
         ;[0, N+1]
         mov rbx, rdx
         sub rbx, 4
         movss xmm1, [rbx]
-        add rbx, 4 * (offset_solver_n + 3)
+        add rbx, r10 ; rbx += 4*N
+        add rbx, 12; rbx += 12 
         movss xmm2, [rbx]
         addss xmm1, xmm2
         movdqu xmm7, [ceroComaCinco]
@@ -176,11 +242,20 @@ solver_set_bnd:
 
         ;[N+1, 0]
         mov rdx, rcx
-        add rdx, (offset_solver_n + 2)*(offset_solver_n + 1) * 4
+    
+        mov r11, r10
+        mov r12, r10
+        add r11, 2 
+        add r12, 1
+        mul r11, r12
+        mul r11, 4
+
+        add rdx, r11
         mov rbx, rdx
         add rbx, 4
         movss xmm1, [rbx]
-        sub rbx, (4 * (offset_solver_n + 3))
+        sub rbx, r10
+        sub rbx, 12
         movss xmm2, [rbx]
         addss xmm1, xmm2
         movdqu xmm7, [ceroComaCinco]        
@@ -188,11 +263,13 @@ solver_set_bnd:
 
         ; [N+1, N+1]
         movss [rdx], xmm1
-        add rdx, 4 * (offset_solver_n + 1)
+        add rdx, r10 ; rbx += 4*N
+        add rdx, 4 ; rbx += 4
         mov rbx, rdx
         sub rbx, 4
         movss xmm1, [rbx]
-        sub rbx, 4 * (offset_solver_n + 1)
+        sub rbx, r10
+        sub rbx, 4
         movss xmm2, [rbx]
         addss xmm1, xmm2
         movdqu xmm7, [ceroComaCinco]        
@@ -210,6 +287,7 @@ solver_set_bnd:
     pop r12
     pop rbx
     pop rbp
+
 ret
 
 
