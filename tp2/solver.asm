@@ -25,6 +25,137 @@ section .text
 %define offset_solver_u 16
 %define offset_solver_v 24
 
+global solver_lin_solve
+
+
+;void solver_lin_solve ( fluid_solver* solver, uint32_t b, float * x, float * x0, float a, float c );
+;uint32_t i, j, k;
+;   for ( k=0 ; k<20 ; k++ ) {
+;       FOR_EACH_CELL
+;           x[IX(i,j)] = (x0[IX(i,j)] + a*(x[IX(i-1,j)]+x[IX(i+1,j)]+x[IX(i,j-1)]+x[IX(i,j+1)]))/c;
+;       END_FOR
+;       solver_set_bnd ( solver, b, x );
+;   
+
+
+solver_lin_solve:
+;rdi = solver, esi = b, rdx = x, rcx = x0, xmm0 = a, xmm1 = c
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+
+    xor r12, r12 
+    mov r12d, [rdi + offset_solver_n] ;muevo a r12 el valor de N, que es un entero de 32 bits
+
+    xor r13, r13 ;uso r13 para saber cuantas iteraciones debo hacer del algoritmo
+
+    xor r8, r8
+    xor r9, r9 ;uso r8 y r9 para guardar los punteros a cada matriz
+    mov r8, rdx
+    mov r9, rcx
+
+    shufps xmm0, xmm0, 00000000b ;uso un shuffle para cuadruplicar el a para poder multiplicar varios resultados a la vez
+                                ;xmm0 viejo = [0, 0, 0, a] -----> xmm0 nuevo = [a, a, a, a]
+    shufps xmm1, xmm1, 00000000 ;idem para c, xmm1 viejo = [0, 0, 0, c] -----> xmm0 nuevo = [c, c, c, c]
+
+    .ciclo_20_iteraciones:
+
+        ;rdx es el puntero a la matriz x, voy a manejarme con tres punteros para ir agarrando los valores necesarios
+        lea r14, [rdx + 4*r12 + 8] ; creo el puntero a la fila de arriba, sumandole N+2 posiciones, que miden 4 bytes cada una
+        lea r15, [r14 + 4*r12 + 8] ; creo el puntero a la fila de arriba de esta, sumandole N+2 posiciones
+        
+        ;|(r15  |..     |..     |r15)   |       |...
+        ;|(r14  |..     |..     |r14)   |       |... los cuatro floats que puedo levantar en un solo xmm al mismo tiempo para cada fila
+        ;|(rdx  |..     |..     |rdx)   |       |... con respecto a la posicion del puntero
+
+        lea rcx, [rcx + 4*r12 + 8] ;muevo el puntero a la matriz x0 a la misma posicion que esta r14 en la otra matriz
+
+        ;|      |       |       |       |       |...
+        ;|(rcx  |..     |..     |rcx)   |       |... los cuatro floats que puedo levantar en un solo xmm al mismo tiempo para cada fila
+        ;|      |       |       |       |       |...
+
+        
+        mov rax, r12 ;uso rax para determinar el numero de columnas sobre las cuales iterar
+            .ciclo_filas:
+            mov rbx, r12 ;utilizo N para saber sobre cuantas columnas tengo que iterar
+
+                .ciclo_columnas:
+                movdqu xmm2, [rdx]
+                movdqu xmm3, [r14]
+                movdqu xmm4, [r15]
+
+                movdqu xmm5, [rcx]
+
+                movdqu xmm6, xmm3 ; hago una copia de los floats levantados de la fila del medio
+                pslldq xmm3, 8    ; coloco en el medio los floats de la izquierda de los dos floats que estoy calculando 
+                psrldq xmm3, 4    ; xmm3 viejo = [d, c, b, a] -----> xmm3 actual = [0, b, a, 0]
+
+                psrldq xmm6, 8    ; coloco en el medio los floats de la derecha de los dos floats que estoy calculando 
+                pslldq xmm6, 4    ; xmm6 viejo = [d, c, b, a] -----> xmm3 actual = [0, d, c, 0]
+                addps xmm3, xmm6  ; sumo xmm3 + xmm6 para conseguir x(i+1,j) + x(i-1, j) de los dos floats a calcular 
+
+                pslldq xmm2, 4    ; limpio los floats de los extremos que no me interesan al resultado actual
+                psrldq xmm2, 8    ; xmm2 viejo = [d, c, b, a] -----> xmm2 actual = [0, c, b, 0]
+                pslldq xmm2, 4
+                addps xmm3, xmm2  ; le sumo los floats de abajo para que cada uno de los dos valores que estoy calculando quede  x(i+1,j) + x(i-1, j) + x(i, j-1)
+
+                pslldq xmm4, 4    ; limpio los floats de los extremos que no me interesan al resultado actual
+                psrldq xmm4, 8    ; xmm4 viejo = [d, c, b, a] -----> xmm4 actual = [0, c, b, 0]
+                pslldq xmm4, 4
+                addps xmm3, xmm4  ; le sumo los floats de arriba para que cada uno de los dos valores que estoy calculando quede  x(i+1,j) + x(i-1, j) + x(i, j-1) + x(i, j+1)
+
+                mulps xmm3, xmm0  ; multiplico ambos valores por a
+
+                pslldq xmm5, 4    ; limpio los floats de los extremos que no me interesan al resultado actual
+                psrldq xmm5, 8
+                pslldq xmm5, 4
+                addps xmm3, xmm5  ; le sumo a mi resultado el valor que tenia en esa posicion en la matriz x0
+
+                ;y luego divido por c
+                divps xmm3, xmm1
+
+                psrldq xmm3, 4    ; coloco el resultado en memoria
+                movq [r14 + 4], xmm3 
+
+                lea rdx, [rdx + 8]
+                lea r14, [r14 + 8]
+                lea r15, [r15 + 8]
+                lea rcx, [rcx + 8]
+                sub rbx, 2
+                cmp rbx, 0
+                jne .ciclo_columnas
+
+            dec rax
+            lea rdx, [rdx + 8]
+            lea r14, [r14 + 8]
+            lea r15, [r15 + 8]
+            lea rcx, [rcx + 8]
+
+            cmp rax, 0
+            jne .ciclo_filas
+
+        mov rdx, r8
+        mov rcx, r9 ;vuelvo a dejar los punteros a las matrices en los principios de estas para la siguiente iteracion de las 20 del algoritmo
+        inc r13
+        cmp r13, 20
+        jne .ciclo_20_iteraciones
+
+    call solver_set_bnd
+             
+    add rsp, 8
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+ret
+
 
 ; void solver_set_bnd ( fluid_solver* solver, uint32_t b, float * x ){
 ; 	uint32_t i;
